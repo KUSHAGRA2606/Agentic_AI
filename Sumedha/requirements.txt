@@ -1,0 +1,5 @@
+chromadb
+sentence-transformers
+marker-pdf
+groq
+pymupdf
