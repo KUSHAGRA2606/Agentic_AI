@@ -1,0 +1,17 @@
+# Vector DB
+qdrant-client>=1.9.0
+
+# Embeddings (free, local, ONNX-optimized)
+fastembed>=0.3.0
+
+# PDF processing
+pymupdf>=1.24.0
+
+# LLM (local via Ollama)
+ollama>=0.3.0
+
+# Utilities
+tqdm>=4.66.0
+python-dotenv>=1.0.0
+numpy>=1.26.0
+ipywidgets>=8.0.0
