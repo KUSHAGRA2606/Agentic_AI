@@ -1,0 +1,6 @@
+llama-parse 
+langchain 
+langchain-text-splitters 
+sentence-transformers 
+qdrant-client 
+groq
