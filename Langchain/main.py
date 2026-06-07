@@ -1,7 +1,6 @@
 import os
 from typing import List, Dict, Any, TypedDict
-import arxiv  # Native python client wrapping the actual arXiv API
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+import arxiv 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -20,7 +19,7 @@ class AgentHiveState(TypedDict):
     evaluation_report: Dict[str, Any]
     iterations: int
 
-
+# Analyses the PS and generates phrases to be queried to find research papers
 def orchestrator_node(state: AgentHiveState) -> Dict[str, Any]:
     """Deconstructs the complex PS into targeted research sub-problems/queries."""
     print("Orchestrator running")
@@ -42,7 +41,7 @@ def orchestrator_node(state: AgentHiveState) -> Dict[str, Any]:
         "iterations": state.get("iterations", 0) + 1
     }
 
-
+# Uses the generated phrases to query arxiv library for research papers
 def librarian_node(state: AgentHiveState) -> Dict[str, Any]:
     """Queries the live arXiv API directly using the generated research phrases."""
     queries = state["research_queries"]
@@ -77,7 +76,11 @@ def librarian_node(state: AgentHiveState) -> Dict[str, Any]:
     print(f"Successfully gathered {len(retrieved_papers)} real-world papers from arXiv.")
     return {"fetched_papers": retrieved_papers}
 
-
+# Evaluates the papers and generates a relevance score. If the score is too low, the agent is 
+# routed back to the orchestrator to generate new keywords, and hence get different and 
+# potentially better papers
+# One imporvement : we give the orchestrator the phrases it generated in the previous 
+# iteration, so it does not repeat them
 def critic_node(state: AgentHiveState) -> Dict[str, Any]:
     """Evaluates paper quality and strictly calculates a relevance score relative to the PS."""
     print("Critic running")
@@ -111,7 +114,7 @@ def critic_node(state: AgentHiveState) -> Dict[str, Any]:
     print(f"Score Awarded: {evaluation.get('relevance_score')}/100")
     return {"evaluation_report": evaluation}
 
-
+# Decides whether to end or to reiterate
 def should_continue(state: AgentHiveState) -> str:
     """Conditional router determining if we need to loop back or terminate."""
     report = state.get("evaluation_report", {})
@@ -151,6 +154,7 @@ workflow.add_conditional_edges(
 
 app = workflow.compile()
 
+# Using the time series ps from iitg.ai projects
 if __name__ == "__main__":
     sample_ps = "Project Overview: Real-Time AI Trading SimulatorThe objective is to build a " \
     "deep learning-powered system that simulates real-time trading using live market data " \
