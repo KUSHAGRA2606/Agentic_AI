@@ -47,6 +47,10 @@ You must:
 For retry iterations, avoid repeating weak previous paper queries. Use the critic
 feedback to make the new paper queries more specific.
 
+TAKE NOTE THAT GitHub's search is keyword/text-based (uses GitHub's code search syntax), not semantic similarity. So the
+query must NOT be a natural language description (e.g. "a repo like mine that does X, Y, Z"),
+Convert that into GitHub search query syntax (keywords, language:, topic:, etc.) 
+
 Return only valid JSON with this schema:
 {{
   "domain": "string",
