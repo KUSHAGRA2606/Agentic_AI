@@ -4,6 +4,7 @@ import json
 import os
 
 from workflow import app as langgraph_app
+from rag_core import COLLECTIONS
 
 st.set_page_config(
     page_title="Agentic Hackathon Framework",
@@ -51,6 +52,13 @@ with col1:
         elif not os.getenv("NVIDIA_API_KEY"):
             st.error("NVIDIA API Key is required.")
         else:
+            for collection in COLLECTIONS.values():
+                try:
+                    all_items = collection.get()
+                    if all_items and all_items.get("ids"):
+                        collection.delete(ids=all_items["ids"])
+                except Exception as e:
+                    st.sidebar.error(f"Error clearing vector DB: {e}")
             st.session_state.is_running = True
             st.session_state.final_state = None
 
@@ -71,7 +79,6 @@ if st.session_state.is_running:
                     time.sleep(0.5) 
                     
                     if state_update and isinstance(state_update, dict):
-                        # Add this check right here 👇
                         if st.session_state.final_state is None:
                             st.session_state.final_state = {}
                         
@@ -132,7 +139,11 @@ if st.session_state.final_state:
                 st.info("No research papers were fetched.")
             for paper in papers:
                 st.markdown(f"##### {paper.get('title')}")
-                st.caption(f"**Year:** {paper.get('year')} | **ArXiv ID:** [{paper.get('id')}](https://arxiv.org/abs/{paper.get('id')})")
+        
+                platform_info = f" | Platform: `{paper.get('platform', 'ArXiv')}`"
+                citation_info = f" | Citations: **{paper.get('citations', 0)}**" if "citations" in paper else ""
+        
+                st.caption(f"**Year:** {paper.get('year')}{platform_info}{citation_info}")
                 st.markdown(f"*{paper.get('abstract')}*")
                 st.markdown("---")
 
@@ -161,8 +172,16 @@ if st.session_state.final_state:
                 st.markdown("---")
 
 
-        hf_report = state.get("hf_report") or {}
-        datasets = hf_report.get("fetched_items") if isinstance(hf_report, dict) else []
+        hf_report = state.get("hf_report")
+        if hf_report is None:
+            hf_report = {}
+
+        if isinstance(hf_report, dict):
+            datasets = hf_report.get("fetched_items")
+            if datasets is None:
+                datasets = []
+        else:
+            datasets = []
 
         with st.expander(f"Hugging Face Datasets Discovered ({len(datasets)})", expanded=False):
             if not datasets:
@@ -170,7 +189,7 @@ if st.session_state.final_state:
             else:
                 for ds in datasets:
                     hub_url = f"https://huggingface.co/datasets/{ds.get('name')}"
-                    st.markdown(f"##### 📊 [{ds.get('name')}]({hub_url})")
+                    st.markdown(f"##### [{ds.get('name')}]({hub_url})")
             
                     col_d1, col_d2 = st.columns(2)
                     with col_d1:

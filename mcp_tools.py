@@ -35,6 +35,50 @@ def search_arxiv_papers(query: str, max_results: int = 5) -> List[Dict[str, Any]
         
     return results
 
+@tool
+def search_semantic_scholar(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+    """Searches Semantic Scholar for academic papers and returns their metadata and citation counts."""
+    print(f"   [Tool: Semantic Scholar MCP] Fetching live data for: '{query}'")
+    
+    api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+    headers = {}
+    if api_key:
+        headers["x-api-key"] = api_key
+    else:
+        print("   [Tool: Semantic Scholar MCP] Warning: SEMANTIC_SCHOLAR_API_KEY not set. Running unauthenticated.")
+
+    url = "https://api.semanticscholar.org/graph/v1/paper/search"
+    params = {
+        "query": query,
+        "limit": min(max_results, 10),
+        "fields": "title,abstract,year,citationCount"
+    }
+
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(url, headers=headers, params=params)
+            if response.status_code != 200:
+                print(f"   [Tool: Semantic Scholar MCP] Error {response.status_code}: {response.text}")
+                return []
+                
+            data = response.json()
+            papers = data.get("data", [])
+            
+            results = []
+            for paper in papers:
+                results.append({
+                    "id": paper.get("paperId"),
+                    "title": paper.get("title"),
+                    "abstract": paper.get("abstract") or "No abstract available.",
+                    "year": str(paper.get("year") or 0),
+                    "citations": paper.get("citationCount", 0),
+                    "source_type": "paper",
+                    "platform": "semantic_scholar"
+                })
+            return results
+    except Exception as e:
+        print(f"   [Tool: Semantic Scholar MCP] Request dropped: {e}")
+        return []
 
 @tool
 def search_github_repos(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
@@ -101,9 +145,6 @@ def search_github_repos(query: str, max_results: int = 5) -> List[Dict[str, Any]
             
     return []
 
-# ==========================================
-# 3. WEB SEARCH TOOLS (Web Agent)
-# ==========================================
 
 @tool
 def search_web_articles(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
@@ -129,7 +170,6 @@ def search_web_articles(query: str, max_results: int = 5) -> List[Dict[str, Any]
     }
 
     try:
-        # Use a context manager with a clear, tight timeout bounds for concurrent workflows
         with httpx.Client(timeout=8.0) as client:
             response = client.post(url, json=payload)
             
@@ -146,7 +186,7 @@ def search_web_articles(query: str, max_results: int = 5) -> List[Dict[str, Any]
                     "url": r.get("url", ""),
                     "title": r.get("title", "Untitled Web Resource"),
                     "content": r.get("content", ""),
-                    "source_type": "web" # Maps cleanly to the RAG destination collection
+                    "source_type": "web" 
                 })
             return formatted_results
 
@@ -154,9 +194,6 @@ def search_web_articles(query: str, max_results: int = 5) -> List[Dict[str, Any]
         print(f"   [Tool: Web Search MCP] Request dropped due to connectivity limits: {e}")
         return []
 
-# ==========================================
-# 4. DATASET TOOLS (Feasibility Check)
-# ==========================================
 
 from huggingface_hub import HfApi
 from huggingface_hub.utils import HfHubHTTPError
@@ -169,11 +206,9 @@ def search_hf_datasets(query: str) -> List[Dict[str, Any]]:
     """
     print(f"   [Tool: HuggingFace MCP] Querying Hub datasets for: '{query}'")
     
-    # Initialize the official programmatic client
-    api = HfApi(token=os.getenv("HF_TOKEN")) # Falls back to local git token if env variable is absent
+    api = HfApi(token=os.getenv("HF_TOKEN")) 
     
     try:
-        # Search for datasets sorted by popularity to ensure we get active, reliable datasets
         datasets = api.list_datasets(
             search=query,
             limit=5,
@@ -182,11 +217,9 @@ def search_hf_datasets(query: str) -> List[Dict[str, Any]]:
         
         results = []
         for d in datasets:
-            # Safely extract download volumes and licensing tags if present
             downloads = getattr(d, "downloads", 0)
             author = getattr(d, "author", "unknown")
             
-            # Map standard open-source licenses out of the tags structure if present
             tags = getattr(d, "tags", [])
             license_type = "unknown"
             for tag in tags:
@@ -195,26 +228,23 @@ def search_hf_datasets(query: str) -> List[Dict[str, Any]]:
                     break
             
             results.append({
-                "name": d.id, # Repository ID layout (e.g., 'org/dataset-name')
+                "name": d.id, 
                 "author": author,
                 "downloads_count": downloads,
                 "license": license_type,
-                "relevance_score": 1.0, # Baseline score match
+                "relevance_score": 1.0, 
                 "source_type": "dataset"
             })
             
         return results
 
-    except HfHubHTTPError as e: # Catch explicit Hugging Face API anomalies
+    except HfHubHTTPError as e: 
         print(f"   [Tool: HuggingFace MCP] API Error while fetching data: {e}")
         return []
     except Exception as e:
         print(f"   [Tool: HuggingFace MCP] Unexpected internal error: {e}")
         return []
 
-# ==========================================
-# 5. UI & WORKSPACE TOOLS
-# ==========================================
 
 @tool
 def create_notion_prd_page(title: str, content: str) -> str:
@@ -225,21 +255,19 @@ def create_notion_prd_page(title: str, content: str) -> str:
     print(f"   [Tool: Notion MCP] Initiating PRD export for: '{title}'")
     
     notion_token = os.getenv("NOTION_TOKEN")
-    parent_page_id = os.getenv("NOTION_PAGE_ID") # Root workspace folder page ID
+    parent_page_id = os.getenv("NOTION_PAGE_ID")
     
     if not notion_token or not parent_page_id:
         print("   [Tool: Notion MCP] Configuration Error: NOTION_TOKEN or NOTION_PAGE_ID is missing.")
         return "ERROR: Missing API authentication credentials."
 
-    # Establish endpoint connections matching global date version structures
     url = "https://api.notion.com/v1/pages"
     headers = {
         "Authorization": f"Bearer {notion_token}",
         "Content-Type": "application/json",
-        "Notion-Version": "2026-03-11" # Target modern Markdown content capabilities
+        "Notion-Version": "2026-03-11"
     }
 
-    # Format parent destination pointer and title parameters natively
     payload = {
         "parent": {
             "type": "page_id",
@@ -253,7 +281,7 @@ def create_notion_prd_page(title: str, content: str) -> str:
                     {
                         "type": "text",
                         "text": {
-                            "content": title[:2000] # Notion absolute single rich-text string boundary
+                            "content": title[:2000]
                         }
                     }
                 ]
@@ -263,7 +291,6 @@ def create_notion_prd_page(title: str, content: str) -> str:
     }
 
     try:
-        # Markdown payloads can be large; provide comfortable connection timeouts
         with httpx.Client(timeout=15.0) as client:
             response = client.post(url, headers=headers, json=payload)
             
@@ -280,23 +307,9 @@ def create_notion_prd_page(title: str, content: str) -> str:
         print(f"   [Tool: Notion MCP] Failed to complete network task bounds: {e}")
         return "ERROR: Workspace synchronization timeout."
 
-# ==========================================
-# EXPORT BUNDLES
-# ==========================================
 
-RESEARCH_TOOLS = [search_arxiv_papers]
+RESEARCH_TOOLS = [search_arxiv_papers, search_semantic_scholar] # 👈 Add it here
 GITHUB_TOOLS = [search_github_repos]
 WEB_TOOLS = [search_web_articles]
 ORCHESTRATOR_TOOLS = [search_hf_datasets] 
 OUTPUT_TOOLS = [create_notion_prd_page]
-
-if __name__ == "__main__":
-    # Test with a very specific, well-known ID to ensure the parser is solid
-    print("[Diagnostic] Testing ArXiv with specific paper ID: 1706.03762")
-    # This is the "Attention Is All You Need" paper ID
-    test_result = search_arxiv_papers.invoke({"query": "1706.03762", "max_results": 1})
-    
-    if test_result and len(test_result) > 0:
-        print(f"✅ ArXiv API is LIVE. Found: {test_result[0]['title']}")
-    else:
-        print("❌ ArXiv API returned no results. Check your network or query syntax.")
