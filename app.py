@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 st.title("Agentic Framework")
-st.markdown("Automated Research Synthesis & PRD Generation Pipeline")
+st.markdown("Automated Research Synthesis Pipeline")
 
 if "final_state" not in st.session_state:
     st.session_state.final_state = None
@@ -41,7 +41,7 @@ st.header("1. Define the Problem")
 problem_statement = st.text_area(
     "Enter your Hackathon Problem Statement (PS):",
     height=150,
-    placeholder="e.g., Build a multi-agent automated scientific literature review system that outputs a structured PRD."
+    placeholder="e.g., Build a multi-agent automated scientific literature review system."
 )
 
 col1, col2 = st.columns([1, 5])
@@ -67,7 +67,6 @@ if st.session_state.is_running:
     
     initial_state = {
         "ps": problem_statement,
-        "prd_version": 0,
         "confidence_scores": {}
     }
     
@@ -97,10 +96,9 @@ if st.session_state.final_state:
     st.divider()
     st.header("3. Review & Evaluation Dashboard")
     
-    tab1, tab2, tab3 = st.tabs([
+    tab1, tab2 = st.tabs([
         "Orchestrator Intent", 
         "Subagent Reports", 
-        "Generated PRD", 
     ])
     
     with tab1:
@@ -171,43 +169,3 @@ if st.session_state.final_state:
                 st.write(snippet)
                 st.markdown("---")
 
-
-        hf_report = state.get("hf_report")
-        if hf_report is None:
-            hf_report = {}
-
-        if isinstance(hf_report, dict):
-            datasets = hf_report.get("fetched_items")
-            if datasets is None:
-                datasets = []
-        else:
-            datasets = []
-
-        with st.expander(f"Hugging Face Datasets Discovered ({len(datasets)})", expanded=False):
-            if not datasets:
-                st.info("No free Hugging Face datasets were matched for this specific architecture requirement.")
-            else:
-                for ds in datasets:
-                    hub_url = f"https://huggingface.co/datasets/{ds.get('name')}"
-                    st.markdown(f"##### [{ds.get('name')}]({hub_url})")
-            
-                    col_d1, col_d2 = st.columns(2)
-                    with col_d1:
-                        st.caption(f"**Author:** {ds.get('author')}")
-                    with col_d2:
-                        st.caption(f"**License Tag:** `{ds.get('license').upper()}`")
-        
-                    st.metric(label="Community Downloads", value=f"{ds.get('downloads_count', 0):,}")
-                    st.markdown("---")
-            
-    with tab3:
-        st.subheader(f"Product Requirements Document (v{state.get('prd_version', 1)})")
-        prd_sections = state.get("prd_sections", {})
-        
-        if not prd_sections:
-            st.warning("No PRD sections were generated.")
-        else:
-            for sec_title, sec_content in prd_sections.items():
-                st.markdown(f"### {sec_title}")
-                st.markdown(sec_content)
-                st.divider()

@@ -17,7 +17,6 @@ from mcp_tools import (
     search_arxiv_papers,
     search_github_repos,
     search_web_articles,
-    search_hf_datasets,
     search_semantic_scholar
 )
 
@@ -52,18 +51,12 @@ class AgentState(TypedDict):
     research_report: Optional[Dict]
     github_report: Optional[Dict]
     web_report: Optional[Dict]
-    hf_report: Optional[Dict]
     
     research_confidence: float
     github_confidence: float
     web_confidence: float
     
     conflicts: Annotated[List[str], operator.add]
-    
-    prd_version: int
-    prd_sections: Dict[str, str]      
-    notion_url: Optional[str]
-    final_md: Optional[str]
     human_feedback: Optional[str]
 
 
@@ -277,146 +270,7 @@ def conflict_detect_node(state: AgentState) -> Dict[str, Any]:
         return {"conflicts": []}
 
 
-@traceable(name="feasibility_check", tags=["core"])
-def feasibility_sanity_check_node(state: AgentState) -> Dict[str, Any]:
-    print("--> [Feasibility Check] Verifying dataset availability...")
-    clean_keywords = state.get("ps_parsed", {}).get("core_challenge", state["ps"][:50])
-    
-    try:
-        datasets = search_hf_datasets.invoke({"query": clean_keywords})
-    except Exception as e:
-        print(f"--> [Feasibility Check] Tool invocation failed: {e}")
-        datasets = []
-        
-    if datasets is None:
-        datasets = []
-        
-    keywords = set(state.get("ps_summary", "").lower().split())
-    scored_datasets = []
-    
-    for ds in datasets:
-        name = ds.get("name", "").lower()
-        kw_match = sum(2 for word in keywords if word in name)
-        download_bonus = min(ds.get("downloads_count", 0) / 10000.0, 5.0)
-        ds["relevance_score"] = kw_match + download_bonus
-        scored_datasets.append(ds)
-        
-    sorted_datasets = sorted(scored_datasets, key=lambda x: x.get("relevance_score", 0), reverse=True)
-    
-    conflicts_update = []
-    if not sorted_datasets:
-        conflicts_update.append("WARNING: No relevant free datasets found on HuggingFace.")
-        
-    return {
-        "conflicts": conflicts_update,
-        "hf_report": {
-            "fetched_items": sorted_datasets
-        }
-    }
-
-
-@traceable(name="prd_agent", tags=["output", "nvidia"])
-def prd_agent_node(state: AgentState) -> Dict[str, Any]:
-    print("--> [PRD Agent] Generating Hardcoded Contextual PRD Sections...")
-    llm = get_pipeline_llm()
-    
-    HARDCODED_SECTIONS = ["Executive Summary", "System Architecture", "ML Pipeline", "Dataset Strategy", "Tech Stack"]
-    
-    generated_sections = {}
-    search_query_base = state.get("ps_summary", state["ps"][:300])
-    
-    for sec in HARDCODED_SECTIONS:
-        print(f"    [PRD Agent] Drafting section: {sec}")
-        time.sleep(1.0)  
-        
-        context = rag_query(
-            query=f"{sec} engineering requirements technical specifications for {search_query_base}",
-            target_collections=["papers", "repos", "web"],
-            top_k=6
-        )
-        
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", f"""You are a Principal Software Architect and Technical Product Manager.
-            Write an implementation-ready, deeply technical section titled '{sec}' for the PRD.
-            
-            Determine the best technical subsections, structural design patterns, and operational boundaries yourself based on the requirements.
-            
-            CRITICAL INSTRUCTIONS FOR HIGH SPECIFICITY & COMPLETENESS:
-            - Avoid high-level hand-waving or generic phrases like "industry-standard tools will be applied". 
-            - Dive straight into concrete details: name explicit design patterns (e.g., MVC, DAO, Repository), engine selections, data flows, and error-handling conditions.
-            - If writing 'Tech Stack', you MUST output an explicit markdown comparison table matching: Component Domain, Selected Framework/Tool, and Integration Interface Protocol.
-            - If writing 'ML Pipeline' or 'System Architecture', define concrete operational modules, tensor/data shapes, and fallback routes.
-            - Ensure your response is comprehensive and fully formulated. Do not leave trailing sentences, markdown blocks, or placeholders hanging. Base your technical claims strictly on verified facts from the context."""),
-            ("human", "HACKATHON PROBLEM STATEMENT:\n{ps}\n\nRAG EXTRACTED CONTEXT BASE:\n{context}")
-        ])
-        
-        chain = prompt | llm
-        try:
-            response = chain.invoke({"ps": state["ps"], "context": context})
-            generated_sections[sec] = response.content
-        except Exception as e:
-            print(f"    [PRD Agent] Error generating section '{sec}': {e}")
-            generated_sections[sec] = f"*(Technical specification generation for {sec} dropped due to connection timeout limits)*"
-            
-    return {
-        "prd_sections": generated_sections,
-        "prd_version": state.get("prd_version", 0) + 1
-    }
-
-
-from mcp_tools import create_notion_prd_page
-
-@traceable(name="notion_exporter", tags=["output"])
-def notion_exporter_node(state: AgentState) -> Dict[str, Any]:
-    print("--> [Notion Exporter] Compiling and syncing PRD with Source Appendix to Notion...")
-    
-    prd_sections = state.get("prd_sections", {})
-    if not prd_sections:
-        print("--> [Notion Exporter] No PRD content found to export.")
-        return {"notion_url": None}
-    
-    markdown_content = f"# Product Requirements Document: {state['ps'][:100]}...\n\n"
-    markdown_content += f"*Generated dynamically by HiveMind AI on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n"
-    
-    for title, content in prd_sections.items():
-        markdown_content += f"## {title}\n{content}\n\n---\n\n"
-        
-    markdown_content += "## Appendix: Verified Sources Cited\n\n"
-    
-    papers = state.get("research_report", {}).get("fetched_items", [])
-    repos = state.get("github_report", {}).get("fetched_items", [])
-    web_slices = state.get("web_report", {}).get("fetched_items", [])
-    
-    if papers:
-        markdown_content += "### Academic Literature\n"
-        for p in papers[:5]: 
-            markdown_content += f"- **[{p.get('title')}](https://arxiv.org/abs/{p.get('id')})** ({p.get('year')}) | Relevance Score: `{p.get('relevance_score', 0):.2f}`\n"
-            markdown_content += f"  *Abstract:* *{p.get('abstract')[:200]}...*\n"
-        markdown_content += "\n"
-        
-    if repos:
-        markdown_content += "### Open-Source Codebases Scoped\n"
-        for r in repos[:5]:
-            markdown_content += f"- **[{r.get('repo_url').split('/')[-1]}]({r.get('repo_url')})** | ⭐ Stars: {r.get('stars')} | Tech Stack: `{', '.join(r.get('tech_stack', []))}`\n"
-            markdown_content += f"  *Description:* {r.get('description')}\n"
-        markdown_content += "\n"
-
-    if web_slices:
-        markdown_content += "### Industry Slices & Technical Documentation\n"
-        for w in web_slices[:5]:
-            markdown_content += f"- **[{w.get('title')}]({w.get('url')})**\n"
-            
-    page_title = f"HiveMind PRD: {state.get('intent', 'Generated Solution')[:50]}"
-    
-    notion_link = create_notion_prd_page.invoke({
-        "title": page_title,
-        "content": markdown_content
-    })
-    
-    return {
-        "final_md": markdown_content,
-        "notion_url": notion_link
-    }
+# Feasibility and PRD nodes removed.
 
 
 
@@ -440,9 +294,6 @@ workflow.add_node("research_agent_node", research_agent_node)
 workflow.add_node("github_agent_node", github_agent_node)
 workflow.add_node("web_agent_node", web_agent_node)
 workflow.add_node("conflict_detect_node", conflict_detect_node)
-workflow.add_node("feasibility_sanity_check_node", feasibility_sanity_check_node)
-workflow.add_node("prd_agent_node", prd_agent_node)
-workflow.add_node("notion_exporter_node", notion_exporter_node)
 
 workflow.add_edge(START, "orchestrator_node")
 workflow.add_edge("orchestrator_node", "research_agent_node")
@@ -465,10 +316,7 @@ workflow.add_conditional_edges(
     {"orchestrator_node": "orchestrator_node", "conflict_detect_node": "conflict_detect_node"}
 )
 
-workflow.add_edge("conflict_detect_node", "feasibility_sanity_check_node")
-workflow.add_edge("feasibility_sanity_check_node", "prd_agent_node")
-workflow.add_edge("prd_agent_node", "notion_exporter_node")
-workflow.add_edge("notion_exporter_node", END)
+workflow.add_edge("conflict_detect_node", END)
 
 app = workflow.compile()
 
@@ -480,10 +328,8 @@ def run_pipeline(problem_statement: str):
         "research_queries": [],
         "github_search_terms": [],
         "web_search_queries": [],
-        "prd_version": 0,
         "conflicts": [],
         "user_docs_context": "",
-        "prd_sections": {},            
         "research_confidence": 0.0,
         "github_confidence": 0.0,
         "web_confidence": 0.0

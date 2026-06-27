@@ -14,15 +14,6 @@ def format_output(final_state: dict):
     
     print(f"\n[Orchestrator Intent]: {final_state.get('intent')}")
     
-    print("\n[Generated PRD]:")
-    prd_sections = final_state.get('prd_sections', {})
-    if not prd_sections:
-        print("  No PRD generated.")
-    else:
-        for section, content in prd_sections.items():
-            print(f"\n--- {section} ---")
-            print(f"{content[:150]}...") 
-
     print("\n[Agent Confidence Scores]:")
     scores = final_state.get("confidence_scores", {})
     for agent, score in scores.items():
